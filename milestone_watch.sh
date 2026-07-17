@@ -5,6 +5,7 @@
 cd "$(dirname "$0")"
 LOG=/data/WILDERS/milestones.log
 exec >> "$LOG" 2>&1
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
 running() { pgrep -f "$1" | grep -v $$ > /dev/null; }
 log() { echo "$(date '+%F %T') [$MODE] $*"; }
@@ -22,11 +23,10 @@ EOF
 }
 
 restart_app() {
-  pkill -f 'uvicorn app:app' || true
-  sleep 3
-  nohup env HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=0 \
-    python3 -m uvicorn app:app --host 0.0.0.0 --port 8902 >> /data/WILDERS/app.log 2>&1 &
-  log "app herstart (pid $!)"
+  # app runs as a systemd --user service (survives reboots via linger)
+  systemctl --user restart wilders-search 2>/dev/null \
+    && log "app herstart via systemd (wilders-search.service)" \
+    || log "systemctl restart faalde"
 }
 
 MODE=$1

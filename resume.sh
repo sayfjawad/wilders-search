@@ -7,6 +7,8 @@
 cd "$(dirname "$0")"
 LOG=/data/WILDERS/resume.log
 exec >> "$LOG" 2>&1
+# make `systemctl --user` work from cron @reboot (no login session env)
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 echo "=== resume $(date '+%F %T')"
 
 start_if_absent() {  # <pgrep-pattern> <command...>
@@ -32,17 +34,13 @@ start_if_absent 'python3 yt_sync\.py' python3 yt_sync.py
 # 3. debate videos (file-exists + state.json make it incremental)
 start_if_absent 'python3 dg_sync\.py' python3 dg_sync.py
 
-# 4. search app
-if ! pgrep -f 'uvicorn app:app' > /dev/null; then
-  if [ -f /data/WILDERS/index/index.sqlite ]; then
-    nohup env HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=0 \
-      python3 -m uvicorn app:app --host 0.0.0.0 --port 8902 >> /data/WILDERS/app.log 2>&1 &
-    echo "  app started (pid $!)"
-  else
-    echo "  no index yet; app not started"
-  fi
+# 4. search app — runs as a systemd --user service (auto-starts at boot via
+# linger); this just makes sure it is up after a manual resume.
+if [ -f /data/WILDERS/index/index.sqlite ]; then
+  systemctl --user start wilders-search 2>/dev/null && echo "  app service ensured up" \
+    || echo "  systemctl start wilders-search faalde"
 else
-  echo "  app already running"
+  echo "  no index yet; app not started"
 fi
 
 # 5. milestone watchers (mail via notify.py)
