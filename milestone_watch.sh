@@ -90,7 +90,24 @@ De app is herstart; alle Kamerfragmenten vanaf ~2010 zijn nu afspeelbaar op het 
 Daarmee is de pipeline volledig: tekst 1995-nu, video ~2010-nu, YouTube-audio gereed voor transcriptie."
   ;;
 
+transcribe)
+  log "start whisperx-transcriptie (GPU 1)"
+  HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=1 python3 transcribe_batch.py
+  N=$(ls /data/WILDERS/transcripts/yt_*.metadata.json 2>/dev/null | wc -l)
+  log "transcriptie klaar ($N transcripten); index herbouwen"
+  python3 build_index.py
+  restart_app
+  STATS=$(index_stats)
+  python3 notify.py "[wilders-search] Mijlpaal 5: YouTube-transcripties doorzoekbaar" \
+"whisperx is klaar: $N video-transcripties toegevoegd en geherindexeerd.
+
+$STATS
+
+De app is herstart; YouTube-fragmenten zijn nu doorzoekbaar met directe
+YouTube-links (op tijdstip) en lokale audio-playback."
+  ;;
+
 *)
-  echo "usage: $0 {text|youtube|video}"; exit 1 ;;
+  echo "usage: $0 {text|youtube|video|transcribe}"; exit 1 ;;
 esac
 log "klaar"
