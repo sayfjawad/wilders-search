@@ -39,6 +39,20 @@ Verslag preference per vergadering: status Gecorrigeerd > Casco >
 Ongecorrigeerd, then latest GewijzigdOp. Re-running `tk_parse.py` after a
 sync upgrades transcripts as corrected verslagen appear.
 
+## Deployment
+
+Live at **https://wilders.scrib-r.com**.
+
+- Runs as a systemd **user** service on the HP Z8 (`wilders-search.service`,
+  linger enabled) so it auto-starts at boot and restarts on crash:
+  `systemctl --user {status,restart} wilders-search`.
+- The edge VPS `vmi2702091` (Tailscale `100.64.0.5`) runs nginx, which proxies
+  `https://wilders.scrib-r.com` → `http://100.64.0.2:8902` over Tailscale
+  (config `/etc/nginx/sites-available/wilders.scrib-r.com`, TLS via certbot,
+  media-streaming proxy settings). Mirrors the `aboali.scrib-r.com` vhost.
+- `resume.sh` (cron `@reboot`) + the milestone watchers use
+  `systemctl --user` to keep the service up; power-loss recovery unchanged.
+
 ## TODO
 
 - Search app (port `abo-ali-search/app.py` + static UI; playback links:
