@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="nl" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wilders Archief — slim zoeken</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --ink:#1e2430; --muted:#68707f;
+  --accent:#1d4ed8; --accent-soft:#e5edfb; --border:#dde1e8; --mark:#fde68a;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#14161a; --panel:#1e2128; --ink:#e8eaef; --muted:#9aa2b1;
+        --accent:#60a5fa; --accent-soft:#1d2c4a; --border:#343945; --mark:#5c4d12;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI",system-ui,sans-serif;line-height:1.7}
+.wrap{max-width:1100px;margin:0 auto;padding:16px 16px 80px}
+
+/* ---------- hero ---------- */
+.hero{position:relative;border-radius:16px;overflow:hidden;margin-bottom:20px;
+  border:1px solid var(--border);padding:36px 26px 30px;color:#f5f6fa;
+  background:linear-gradient(135deg,#152449 0%,#1d3a7a 55%,#3b2f65 100%)}
+.hero h1{font-size:1.7rem;margin:0 0 4px}
+.hero .tagline{margin:0;font-size:1rem;color:#c9d2e8}
+.badge{display:inline-block;background:rgba(255,255,255,.14);color:#fff;
+  border-radius:20px;padding:1px 12px;font-size:.75rem;margin-inline-start:8px;vertical-align:middle}
+.badge:empty{display:none}
+#lang-toggle{position:absolute;top:12px;inset-inline-end:12px;z-index:2;
+  background:rgba(10,12,18,.35);color:#fff;border:1px solid rgba(255,255,255,.35);
+  border-radius:20px;padding:6px 16px;font-size:.85rem;cursor:pointer}
+#lang-toggle:hover{background:rgba(10,12,18,.6)}
+@media (max-width:700px){ .hero h1{font-size:1.25rem} .hero .tagline{font-size:.85rem} }
+
+.sub{color:var(--muted);font-size:.9rem;margin-bottom:20px}
+.searchbar{display:flex;gap:8px;flex-wrap:wrap}
+.searchbar input[type=text]{flex:1;min-width:260px;padding:12px 14px;font-size:1.05rem;
+  border:1px solid var(--border);border-radius:10px;background:var(--panel);color:var(--ink)}
+button{padding:12px 22px;font-size:1rem;border:0;border-radius:10px;cursor:pointer;
+  background:var(--accent);color:#fff;font-weight:600}
+button.secondary{background:var(--panel);color:var(--accent);border:1px solid var(--accent)}
+button:disabled{opacity:.5;cursor:wait}
+.filters{display:flex;gap:12px;align-items:center;margin:12px 0 4px;flex-wrap:wrap;
+  color:var(--muted);font-size:.9rem}
+.filters input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:8px;
+  background:var(--panel);color:var(--ink)}
+#answer{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;
+  padding:16px 18px;margin:20px 0;white-space:pre-wrap;display:none}
+#answer .cite{color:var(--accent);cursor:pointer;font-weight:700;text-decoration:underline}
+#status{margin:18px 0;color:var(--muted)}
+.tablewrap{overflow-x:auto;margin-top:10px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden}
+th,td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;text-align:start}
+th{background:var(--accent-soft);color:var(--ink);font-size:.85rem;white-space:nowrap}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--accent)}
+td.time{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600}
+td.date{white-space:nowrap;color:var(--muted)}
+td.title{max-width:220px;font-size:.85rem;color:var(--muted)}
+td.txt{max-width:480px;font-size:.95rem}
+.spk{font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:2px}
+.src-tag{display:inline-block;font-size:.7rem;border:1px solid var(--border);border-radius:6px;
+  padding:0 6px;color:var(--muted);margin-inline-start:6px;vertical-align:middle}
+mark{background:var(--mark);border-radius:3px;padding:0 2px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.btns a,.btns button{font-size:.8rem;padding:6px 12px;border-radius:8px;text-decoration:none;
+  white-space:nowrap;display:inline-flex;align-items:center}
+a.yt{background:#c4302b;color:#fff}
+a.src{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent)}
+
+/* ---------- about ---------- */
+.about{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  padding:20px 24px;margin:26px 0;font-size:.95rem}
+.about h2{margin:0 0 10px;font-size:1.2rem;color:var(--accent)}
+.about h3{margin:18px 0 6px;font-size:1rem}
+.about p{margin:8px 0}
+.about a{color:var(--accent);font-weight:600}
+
+/* mobile: collapse table rows into stacked cards */
+@media (max-width: 700px){
+  #results thead{display:none}
+  #results, #results tbody, #results tr, #results td{display:block;width:100%}
+  #results tr{border:1px solid var(--border);border-radius:12px;margin-bottom:12px;
+    background:var(--panel);padding:10px 12px}
+  #results td{border:0;padding:2px 0;max-width:none}
+  td.num,td.date,td.time{display:inline-block;width:auto;margin-inline-end:10px}
+  td.title{font-size:.8rem}
+  #player-box .row{flex-wrap:wrap}
+  #player{max-width:100%;width:100%}
+}
+tr.cited td{border-inline-start:3px solid var(--accent)}
+#player-box{position:fixed;bottom:0;inset-inline:0;background:var(--panel);
+  border-top:2px solid var(--accent);padding:10px 16px;display:none;z-index:10;
+  box-shadow:0 -6px 24px rgba(0,0,0,.25)}
+#player-box .row{display:flex;gap:14px;align-items:center;max-width:1100px;margin:0 auto}
+#player{max-width:390px;width:390px;max-height:220px;border-radius:8px;background:#000}
+#player-info{flex:1;font-size:.85rem;color:var(--muted)}
+#player-close{background:transparent;color:var(--muted);font-size:1.4rem;padding:4px 10px;border:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <button id="lang-toggle">English</button>
+    <h1><span data-i18n="heroTitle">Wilders Archief</span> <span class="badge" id="count-badge"></span></h1>
+    <p class="tagline" data-i18n="heroTagline">Alles wat Geert Wilders in het openbaar zei — doorzoekbaar, met bron, datum en tijdstip.</p>
+  </header>
+
+  <div class="sub"><span data-i18n="sub">Slim semantisch zoeken in officiële Tweede Kamer-verslagen en transcripties van openbare video's — stel een vraag of zoek een onderwerp, en krijg de fragmenten met datum, tijdstip en afspeellinks.</span></div>
+
+  <div class="searchbar">
+    <input type="text" id="q" autofocus>
+    <button id="btn-ask" data-i18n="btnAsk">🤖 Vraag de AI</button>
+    <button id="btn-search" class="secondary" data-i18n="btnSearch">🔍 Alleen zoeken</button>
+  </div>
+  <div class="filters">
+    <label><input type="checkbox" id="only-person" checked> <span data-i18n="onlyPerson">alleen uitspraken van Wilders</span></label>
+    <label><span data-i18n="from">van</span> <input type="date" id="date-from"></label>
+    <label><span data-i18n="to">tot</span> <input type="date" id="date-to"></label>
+    <label><span data-i18n="topk">resultaten</span> <select id="topk"><option>20</option><option selected>30</option><option>40</option><option>60</option></select></label>
+  </div>
+
+  <div id="answer"></div>
+  <div id="status"></div>
+  <div class="tablewrap"><table id="results" style="display:none">
+    <thead><tr>
+      <th id="th-num" class="sortable">#</th>
+      <th id="th-date" class="sortable"><span data-i18n="thDate">Datum</span> <span id="date-arrow">↕</span></th>
+      <th data-i18n="thTime">Tijd</th><th data-i18n="thText">Tekst &amp; afspelen</th><th data-i18n="thSource">Bron</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table></div>
+
+  <!-- ---------- about (Dutch) ---------- -->
+  <section class="about" id="about-nl">
+    <h2>Wat is dit?</h2>
+    <p>Dit archief verzamelt <b>openbare uitspraken van Geert Wilders</b> uit twee soorten bronnen:
+    de <b>officiële verslagen van de Tweede Kamer</b> (via het open datamagazijn van de Kamer) en
+    <b>AI-transcripties van openbare video's</b>. Alles is doorzoekbaar op betekenis, niet alleen op
+    letterlijke woorden.</p>
+    <p>Elke zoektreffer is verifieerbaar: je ziet de datum, het tijdstip binnen het debat of de
+    video, de spreker en de brontekst. Zo kun je zelf nagaan wat er werkelijk gezegd is, in welke
+    context, en uitspraken door de jaren heen naast elkaar leggen.</p>
+    <h3>Hoe gebruik je het?</h3>
+    <p>Typ een vraag of onderwerp in het zoekveld — bijvoorbeeld "wat zei hij over de zorgpremie?"
+    of "kernenergie". <b>"Alleen zoeken"</b> toont de fragmenten; <b>"Vraag de AI"</b> schrijft een
+    samenvatting met bronverwijzingen [n] die naar de fragmenten linken. Met het vinkje
+    "alleen uitspraken van Wilders" beperk je de resultaten tot zijn eigen woorden; zonder vinkje
+    zoek je ook in de reacties van andere sprekers in dezelfde debatten.</p>
+    <h3>Bronnen &amp; techniek</h3>
+    <p>Kamerverslagen zijn de gecorrigeerde, officiële transcripten (bron: gegevensmagazijn
+    Tweede Kamer). Video-transcripties zijn automatisch gegenereerd en kunnen fouten bevatten —
+    controleer belangrijke citaten altijd via de afspeellink. Het project is open source en de
+    aanpak is herbruikbaar voor iedere publieke figuur.</p>
+  </section>
+
+  <!-- ---------- about (English) ---------- -->
+  <section class="about" id="about-en" style="display:none">
+    <h2>What is this?</h2>
+    <p>This archive collects <b>public statements by Geert Wilders</b> from two kinds of sources:
+    the <b>official transcripts of the Dutch House of Representatives</b> (via the House's open
+    data API) and <b>AI transcriptions of public videos</b>. Everything is searchable by meaning,
+    not just literal keywords.</p>
+    <p>Every result is verifiable: you see the date, the timestamp within the debate or video, the
+    speaker and the source text. That lets you check what was actually said, in what context, and
+    compare statements across the years.</p>
+    <h3>How to use it</h3>
+    <p>Type a question or topic in the search box — e.g. "what did he say about healthcare
+    premiums?" or "nuclear energy". <b>"Search only"</b> shows the matching fragments;
+    <b>"Ask the AI"</b> writes a summary with source references [n] linking to the fragments.
+    The "only statements by Wilders" checkbox limits results to his own words; uncheck it to also
+    search the responses of other speakers in the same debates. The archive is in Dutch, so Dutch
+    queries give the best results.</p>
+    <h3>Sources &amp; technology</h3>
+    <p>Parliamentary records are the corrected official transcripts (source: Tweede Kamer open
+    data). Video transcriptions are machine-generated and may contain errors — always verify
+    important quotes via the playback link. The project is open source and the approach is
+    reusable for any public figure.</p>
+  </section>
+
+</div>
+
+<div id="player-box">
+  <div class="row">
+    <video id="player" controls preload="none"></video>
+    <div id="player-info"></div>
+    <button id="player-close" title="✕">✕</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------------- i18n ---------------- */
+const I18N = {
+  nl: {
+    docTitle:'Wilders Archief — slim zoeken',
+    heroTitle:'Wilders Archief',
+    heroTagline:'Alles wat Geert Wilders in het openbaar zei — doorzoekbaar, met bron, datum en tijdstip.',
+    sub:"Slim semantisch zoeken in officiële Tweede Kamer-verslagen en transcripties van openbare video's — stel een vraag of zoek een onderwerp, en krijg de fragmenten met datum, tijdstip en afspeellinks.",
+    placeholder:'bijv. wat zei hij over de hypotheekrenteaftrek? / asielbeleid / kernenergie…',
+    btnAsk:'🤖 Vraag de AI', btnSearch:'🔍 Alleen zoeken',
+    onlyPerson:'alleen uitspraken van Wilders',
+    from:'van', to:'tot', topk:'resultaten',
+    thDate:'Datum', thTime:'Tijd', thText:'Tekst & afspelen', thSource:'Bron',
+    thNumTitle:'Sorteer op relevantie', thDateTitle:'Klik om op datum te sorteren',
+    statusAsking:'⏳ Zoeken en antwoord genereren… (kan enkele seconden duren)',
+    statusSearching:'⏳ Zoeken…',
+    statusNone:'Geen resultaten.',
+    statusCount:n=>`${n} relevante fragmenten`,
+    errNoLLM:'⚠️ Geen lokale LLM-server gevonden (stel LLM_BASE_URL in). Hieronder de zoekresultaten.',
+    errAnswer:'⚠️ Fout bij het genereren van het antwoord: ',
+    errGeneric:'⚠️ Fout: ',
+    play:'▶ Afspelen', startsAt:'begint bij', srcLink:'Bron',
+    srcTK:'Kamerverslag', srcASR:'video (ASR)',
+    badge:(v,c)=>`${v} bronnen · ${c} fragmenten`,
+    langBtn:'English'
+  },
+  en: {
+    docTitle:'Wilders Archive — smart search',
+    heroTitle:'The Wilders Archive',
+    heroTagline:'Everything Geert Wilders said in public — searchable, with source, date and timestamp.',
+    sub:'Smart semantic search across official parliamentary transcripts and AI transcriptions of public videos — ask a question or search a topic, and get the fragments with date, timestamp and playback links. (The archive is in Dutch; Dutch queries give the best results.)',
+    placeholder:'e.g. what did he say about mortgage interest deduction? / asylum policy…',
+    btnAsk:'🤖 Ask the AI', btnSearch:'🔍 Search only',
+    onlyPerson:'only statements by Wilders',
+    from:'From', to:'To', topk:'Results',
+    thDate:'Date', thTime:'Time', thText:'Text & playback', thSource:'Source',
+    thNumTitle:'Sort by relevance', thDateTitle:'Click to sort by date',
+    statusAsking:'⏳ Searching and generating an answer… (may take a few seconds)',
+    statusSearching:'⏳ Searching…',
+    statusNone:'No results.',
+    statusCount:n=>`${n} relevant fragments`,
+    errNoLLM:'⚠️ No local LLM server found (set LLM_BASE_URL). Semantic search results are shown below.',
+    errAnswer:'⚠️ Error generating the answer: ',
+    errGeneric:'⚠️ Error: ',
+    play:'▶ Play', startsAt:'starts at', srcLink:'Source',
+    srcTK:'official record', srcASR:'video (ASR)',
+    badge:(v,c)=>`${v} sources · ${c} fragments`,
+    langBtn:'Nederlands'
+  }
+};
+let lang = new URLSearchParams(location.search).get('lang')
+        || localStorage.getItem('lang') || 'nl';
+if(!I18N[lang]) lang = 'nl';
+const t = k => I18N[lang][k];
+
+let stats = null;
+let lastStatus = null;
+
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.title = t('docTitle');
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent = t(el.dataset.i18n); });
+  $('#q').placeholder = t('placeholder');
+  $('#th-num').title = t('thNumTitle');
+  $('#th-date').title = t('thDateTitle');
+  $('#lang-toggle').textContent = t('langBtn');
+  $('#about-nl').style.display = lang==='nl' ? '' : 'none';
+  $('#about-en').style.display = lang==='en' ? '' : 'none';
+  if(stats) $('#count-badge').textContent = t('badge')(stats.videos, stats.chunks);
+  if(lastStatus) $('#status').textContent =
+    lastStatus.key==='statusCount' ? t('statusCount')(lastStatus.n) : t(lastStatus.key);
+  if(lastResults.length) drawRows();
+}
+$('#lang-toggle').onclick = ()=>{
+  lang = lang==='nl' ? 'en' : 'nl';
+  localStorage.setItem('lang', lang);
+  applyLang();
+};
+
+/* ---------------- search / RAG ---------------- */
+let lastResults = [];
+
+function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+function highlight(text, query){
+  let html = esc(text);
+  const words = [...new Set(query.split(/\s+/).filter(w=>w.length>2))]
+    .sort((a,b)=>b.length-a.length);
+  for(const w of words){
+    try{ html = html.replace(new RegExp(esc(w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),'<mark>$&</mark>'); }catch(e){}
+  }
+  return html;
+}
+function dateVal(id){ const v=$(id).value; return v ? v.replaceAll('-','') : null; }
+function setStatus(key, n){ lastStatus = {key, n};
+  $('#status').textContent = key==='statusCount' ? t('statusCount')(n) : t(key); }
+
+async function run(mode){
+  const query = $('#q').value.trim();
+  if(!query) return;
+  $('#btn-ask').disabled = $('#btn-search').disabled = true;
+  stopPlayer();
+  $('#results tbody').innerHTML='';
+  $('#answer').style.display='none';
+  setStatus(mode==='ask' ? 'statusAsking' : 'statusSearching');
+  $('#results').style.display='none';
+  try{
+    const body = {top_k:+$('#topk').value, date_from:dateVal('#date-from'), date_to:dateVal('#date-to'),
+                  only_person:$('#only-person').checked};
+    let data;
+    if(mode==='ask'){
+      body.question = query;
+      const r = await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      data = await r.json();
+      if(data.answer){
+        $('#answer').innerHTML = esc(data.answer)
+          .replace(/\[(\d+)\]/g,'<span class="cite" onclick="scrollToRow($1)">[$1]</span>');
+        $('#answer').style.display='block';
+      } else if(data.error==='no_llm'){
+        $('#answer').textContent=t('errNoLLM');
+        $('#answer').style.display='block';
+      } else if(data.error){
+        $('#answer').textContent=t('errAnswer')+data.error;
+        $('#answer').style.display='block';
+      }
+      renderTable(data.sources, query);
+    } else {
+      body.query = query;
+      const r = await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      data = await r.json();
+      renderTable(data.results, query);
+    }
+  }catch(e){
+    lastStatus = null;
+    $('#status').textContent = t('errGeneric')+e;
+  }finally{
+    $('#btn-ask').disabled = $('#btn-search').disabled = false;
+  }
+}
+
+let lastQuery = '';
+let sortDir = null;   // null = relevance, 'asc' | 'desc' = by date
+
+function renderTable(rows, query){
+  lastResults = rows || [];
+  lastQuery = query;
+  sortDir = null;
+  $('#date-arrow').textContent = '↕';
+  if(!lastResults.length){
+    $('#results tbody').innerHTML='';
+    $('#results').style.display='none';
+    setStatus('statusNone');
+    return;
+  }
+  setStatus('statusCount', lastResults.length);
+  drawRows();
+}
+
+function drawRows(){
+  const tb = $('#results tbody');
+  tb.innerHTML='';
+  const order = lastResults.map((_,i)=>i);
+  if(sortDir){
+    const dir = sortDir==='asc' ? 1 : -1;
+    order.sort((a,b)=>{
+      const ra=lastResults[a], rb=lastResults[b];
+      if(ra.date!==rb.date) return ra.date<rb.date ? -dir : dir;
+      return (ra.start-rb.start)*dir;
+    });
+  }
+  for(const i of order){
+    const r = lastResults[i];
+    const tr = document.createElement('tr');
+    tr.id = 'row-'+(i+1);                 // stable id: AI citations [n] keep working after sorting
+    if(r.cited) tr.classList.add('cited');
+    const srcTag = r.transcript_source==='official' ? t('srcTK') : t('srcASR');
+    tr.innerHTML = `
+      <td class="num">${i+1}</td>
+      <td class="date">${r.date}</td>
+      <td class="time">${r.start_fmt}</td>
+      <td class="txt"><div class="spk">${esc(r.speaker||'')}<span class="src-tag">${srcTag}</span></div>
+        ${highlight(r.text, lastQuery)}
+        <div class="btns">
+          ${r.media_url?`<button onclick="playLocal(${i})">${t('play')}</button>`:''}
+          ${r.youtube_url?`<a class="yt" href="${r.youtube_url}" target="_blank" rel="noopener">YouTube ↗</a>`:''}
+          ${r.source_url?`<a class="src" href="${r.source_url}" target="_blank" rel="noopener">${t('srcLink')} ↗</a>`:''}
+        </div>
+      </td>
+      <td class="title">${esc(r.title)}</td>`;
+    tb.appendChild(tr);
+  }
+  $('#results').style.display='table';
+}
+
+$('#th-date').onclick = ()=>{
+  if(!lastResults.length) return;
+  sortDir = sortDir==='desc' ? 'asc' : 'desc';   // first click: newest first
+  $('#date-arrow').textContent = sortDir==='desc' ? '▼' : '▲';
+  drawRows();
+};
+$('#th-num').onclick = ()=>{
+  if(!lastResults.length) return;
+  sortDir = null;
+  $('#date-arrow').textContent = '↕';
+  drawRows();
+};
+
+function scrollToRow(n){
+  const el = document.getElementById('row-'+n);
+  if(el){ el.scrollIntoView({behavior:'smooth',block:'center'});
+    el.style.transition='background .3s'; el.style.background='var(--mark)';
+    setTimeout(()=>el.style.background='',1600); }
+}
+
+function playLocal(i){
+  const r = lastResults[i];
+  const p = $('#player');
+  p.src = '/media/'+r.media_file;
+  $('#player-info').innerHTML = `<b>${esc(r.title)}</b><br>${r.date} — ${t('startsAt')} ${r.start_fmt}`;
+  $('#player-box').style.display='block';
+  p.onloadedmetadata = ()=>{ p.currentTime = Math.max(r.start-2,0); p.play(); };
+  p.load();
+}
+function stopPlayer(){
+  const p = $('#player');
+  p.pause();
+  p.removeAttribute('src'); p.load();   // stop buffering/downloading too
+  $('#player-box').style.display='none';
+}
+$('#player-close').onclick = stopPlayer;
+
+$('#btn-ask').onclick = ()=>run('ask');
+$('#btn-search').onclick = ()=>run('search');
+$('#q').addEventListener('keydown',e=>{ if(e.key==='Enter') run(e.ctrlKey?'search':'ask'); });
+
+fetch('/api/stats').then(r=>r.json()).then(d=>{
+  stats = d;
+  $('#count-badge').textContent = t('badge')(d.videos, d.chunks);
+}).catch(()=>{});
+
+applyLang();
+</script>
+</body>
+</html>

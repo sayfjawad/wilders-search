@@ -1,0 +1,32 @@
+{
+  "person": "Geert Wilders",
+  "slug": "wilders",
+  "data_dir": "/data/WILDERS",
+  "tk": {
+    "odata_base": "https://gegevensmagazijn.tweedekamer.nl/OData/v4/2.0",
+    "persoon_id": "6d33b9bc-7d3a-4a60-b2d7-c2b70cd11ab1",
+    "match": { "achternaam": "Wilders", "voornaam": "Geert" },
+    "since": "2013-01-01"
+  },
+  "ob": {
+    "sru_base": "https://repository.overheid.nl/sru",
+    "creator": "Tweede Kamer der Staten-Generaal",
+    "match_naam": "Wilders",
+    "since": "1995-01-01",
+    "until": "2013-06-24"
+  },
+  "youtube": {
+    "channels": [
+      {
+        "name": "PVVpers",
+        "url": "https://www.youtube.com/channel/UCCEuhjaT09ArS77AJm6etXw"
+      }
+    ]
+  },
+  "whisperx": {
+    "model": "large-v3",
+    "language": "nl",
+    "device": "cuda",
+    "batch_size": 16
+  }
+}
