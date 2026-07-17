@@ -91,8 +91,19 @@ Daarmee is de pipeline volledig: tekst 1995-nu, video ~2010-nu, YouTube-audio ge
   ;;
 
 transcribe)
-  log "start whisperx-transcriptie (GPU 1)"
-  HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=1 python3 transcribe_batch.py
+  # local shards 0/4 + 1/4 on both V100s; remote workers (gx10, c4130) get
+  # shards 2/4 and 3/4 via remote_worker.sh, which sets a .remote_*.active
+  # marker. The final sweep (no --shard) picks up anything a worker left.
+  log "start whisperx-transcriptie: lokale shards 0/4 (GPU0) + 1/4 (GPU1)"
+  HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=0 python3 transcribe_batch.py --shard 0/4 &
+  P0=$!
+  HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=1 python3 transcribe_batch.py --shard 1/4 &
+  P1=$!
+  wait $P0 $P1
+  log "lokale shards klaar; wachten op remote workers"
+  while ls /data/WILDERS/.remote_*.active > /dev/null 2>&1; do sleep 300; done
+  log "veegronde voor achtergebleven bestanden"
+  HF_HOME=/data/huggingface CUDA_VISIBLE_DEVICES=0 python3 transcribe_batch.py
   N=$(ls /data/WILDERS/transcripts/yt_*.metadata.json 2>/dev/null | wc -l)
   log "transcriptie klaar ($N transcripten); index herbouwen"
   python3 build_index.py

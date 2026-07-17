@@ -8,6 +8,8 @@ For every <data>/youtube/<base>.opus without a transcripts/yt_<base>.json:
     from the .info.json; transcript_source: "asr")
 
 Pass --diarize to enable speaker diarization (needs HF_TOKEN in the env).
+Pass --shard K/N to process only files with index % N == K (parallel workers
+on multiple GPUs/machines); a final run without --shard sweeps leftovers.
 """
 import json
 import os
@@ -76,18 +78,26 @@ def convert(wx_result: dict, info: dict) -> tuple[dict, dict]:
 
 def main():
     diarize = "--diarize" in sys.argv
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    shard_k, shard_n = 0, 1
+    argv = sys.argv[1:]
+    if "--shard" in argv:
+        i = argv.index("--shard")
+        shard_k, shard_n = (int(x) for x in argv[i + 1].split("/"))
+        del argv[i:i + 2]
+    args = [a for a in argv if not a.startswith("--")]
     cfg = load_config(args[0] if args else None)
     ensure_dirs(cfg)
     paths = cfg["_paths"]
     wx = cfg.get("whisperx", {})
 
     todo = []
-    for audio in sorted(paths["youtube"].glob("*.opus")):
+    for idx, audio in enumerate(sorted(paths["youtube"].glob("*.opus"))):
+        if idx % shard_n != shard_k:
+            continue
         base = f"yt_{audio.stem}"
         if not (paths["transcripts"] / f"{base}.json").exists():
             todo.append((audio, base))
-    print(f"{len(todo)} audio files to transcribe")
+    print(f"{len(todo)} audio files to transcribe (shard {shard_k}/{shard_n})")
 
     for i, (audio, base) in enumerate(todo, 1):
         info_path = audio.with_suffix(".info.json")
