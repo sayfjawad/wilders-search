@@ -20,17 +20,17 @@ start_if_absent() {  # <pgrep-pattern> <command...>
 }
 
 # leftover partial video downloads from a crash (only when dg_sync is not active)
-pgrep -f 'dg_sync\.py' > /dev/null || rm -f /data/WILDERS/debatgemist/*.part.mp4
+pgrep -f 'python3 dg_sync\.py' > /dev/null || rm -f /data/WILDERS/debatgemist/*.part.mp4
 
 # 1. text sources (each chains its parser; both incremental)
-start_if_absent 'tk_sync\.py|tk_parse\.py' bash -c 'python3 tk_sync.py && python3 tk_parse.py'
-start_if_absent 'ob_sync\.py|ob_parse\.py' bash -c 'python3 ob_sync.py && python3 ob_parse.py'
+start_if_absent 'python3 (tk_sync|tk_parse)\.py' bash -c 'python3 tk_sync.py && python3 tk_parse.py'
+start_if_absent 'python3 (ob_sync|ob_parse)\.py' bash -c 'python3 ob_sync.py && python3 ob_parse.py'
 
 # 2. youtube audio (rate-limit friendly; archive.txt makes it incremental)
-start_if_absent 'yt_sync\.py' python3 yt_sync.py
+start_if_absent 'python3 yt_sync\.py' python3 yt_sync.py
 
 # 3. debate videos (file-exists + state.json make it incremental)
-start_if_absent 'dg_sync\.py' python3 dg_sync.py
+start_if_absent 'python3 dg_sync\.py' python3 dg_sync.py
 
 # 4. search app
 if ! pgrep -f 'uvicorn app:app' > /dev/null; then

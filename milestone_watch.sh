@@ -34,7 +34,7 @@ case "$MODE" in
 
 text)
   log "wacht op tekst-backfills (tk_sync/tk_parse/ob_sync/ob_parse)"
-  while running 'tk_sync\.py|tk_parse\.py|ob_sync\.py|ob_parse\.py'; do sleep 120; done
+  while running 'python3 (tk_sync|tk_parse|ob_sync|ob_parse)\.py'; do sleep 120; done
   log "tekst-backfills klaar; index herbouwen"
   python3 build_index.py
   restart_app
@@ -53,7 +53,7 @@ Volgende stappen die nog lopen: YouTube-audio, debatvideo's."
 youtube)
   log "wacht op YouTube-audiodownload"
   sleep 60
-  while running 'yt_sync\.py'; do sleep 300; done
+  while running 'python3 yt_sync\.py'; do sleep 300; done
   N=$(ls /data/WILDERS/youtube/*.opus 2>/dev/null | wc -l)
   GB=$(du -sh /data/WILDERS/youtube 2>/dev/null | cut -f1)
   python3 notify.py "[wilders-search] Mijlpaal 2: YouTube-audio compleet" \
@@ -66,7 +66,7 @@ Die stap claimt beide GPU's een tijd - start hem wanneer het uitkomt met:
 
 video)
   log "wacht op eerste dg_sync-run"
-  while running 'dg_sync\.py'; do sleep 300; done
+  while running 'python3 dg_sync\.py'; do sleep 300; done
   N=$(ls /data/WILDERS/debatgemist/*.mp4 2>/dev/null | grep -vc part)
   GB=$(du -sh /data/WILDERS/debatgemist 2>/dev/null | cut -f1)
   restart_app
@@ -76,7 +76,7 @@ De app is herstart en koppelt zoekresultaten nu aan lokale video met het juiste 
 
 Tweede run start zodra de tekst-backfill klaar is (voor de nieuw ontdekte debatdagen)."
   log "wacht tot tekst-backfill klaar is voor run 2"
-  while running 'tk_sync\.py|tk_parse\.py'; do sleep 300; done
+  while running 'python3 (tk_sync|tk_parse)\.py'; do sleep 300; done
   log "start tweede dg_sync-run"
   python3 dg_sync.py
   N=$(ls /data/WILDERS/debatgemist/*.mp4 2>/dev/null | grep -vc part)

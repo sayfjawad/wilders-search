@@ -35,23 +35,23 @@ def main():
         "tk": {
             "xml": count((data / "tk" / "xml").glob("*.xml")),
             "transcripts": count(p["transcripts"].glob("tk_*.metadata.json")),
-            "sync_running": running(r"tk_sync\.py|tk_parse\.py"),
+            "sync_running": running(r"python3 (tk_sync|tk_parse)\.py"),
         },
         "ob": {
             "xml": count((data / "ob" / "xml").glob("*.xml")),
             "transcripts": count(p["transcripts"].glob("ob_*.metadata.json")),
-            "sync_running": running(r"ob_sync\.py|ob_parse\.py"),
+            "sync_running": running(r"python3 (ob_sync|ob_parse)\.py"),
         },
         "youtube": {
             "audio": count(p["youtube"].glob("*.opus")),
             "transcripts": count(p["transcripts"].glob("yt_*.metadata.json")),
-            "sync_running": running(r"yt_sync\.py"),
-            "transcribe_running": running(r"transcribe_batch\.py"),
+            "sync_running": running(r"python3 yt_sync\.py"),
+            "transcribe_running": running(r"python3 transcribe_batch\.py"),
         },
         "video": {
             "files": count(dg.glob("*.mp4")) - count(dg.glob("*.part.mp4")),
             "bytes": sum(f.stat().st_size for f in dg.glob("*.mp4")) if dg.exists() else 0,
-            "sync_running": running(r"dg_sync\.py"),
+            "sync_running": running(r"python3 dg_sync\.py"),
         },
         "index": {},
         "app_running": running(r"uvicorn app:app"),
