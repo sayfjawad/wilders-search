@@ -1,6 +1,10 @@
 """Self-contained transcription worker for remote machines (no repo deps).
 
-Usage: python3 remote_transcribe.py <audio_dir> <out_dir> [device]
+Usage: python3 remote_transcribe.py <audio_dir> <out_dir> [device] [K/N]
+
+The optional K/N shard splits the audio_dir files (index % N == K) so several
+GPU workers can run over the same directory in parallel, each pinned to its
+own GPU via CUDA_VISIBLE_DEVICES.
 
 Transcribes every *.opus in audio_dir to out_dir/yt_<base>.json +
 yt_<base>.metadata.json in the abo-ali format used by wilders-search.
@@ -117,12 +121,15 @@ def pick_backend(device):
 def main():
     audio_dir, out_dir = Path(sys.argv[1]), Path(sys.argv[2])
     device = sys.argv[3] if len(sys.argv) > 3 else "cuda"
+    shard_k, shard_n = 0, 1
+    if len(sys.argv) > 4 and "/" in sys.argv[4]:
+        shard_k, shard_n = (int(x) for x in sys.argv[4].split("/"))
     out_dir.mkdir(parents=True, exist_ok=True)
     run = pick_backend(device)
 
-    todo = [a for a in sorted(audio_dir.glob("*.opus"))
-            if not (out_dir / f"yt_{a.stem}.json").exists()]
-    print(f"{len(todo)} files to transcribe on {device}")
+    todo = [a for i, a in enumerate(sorted(audio_dir.glob("*.opus")))
+            if i % shard_n == shard_k and not (out_dir / f"yt_{a.stem}.json").exists()]
+    print(f"{len(todo)} files to transcribe on {device} (shard {shard_k}/{shard_n})")
     for i, audio in enumerate(todo, 1):
         print(f"[{i}/{len(todo)}] {audio.name}", flush=True)
         info_p = audio.with_suffix(".info.json")
