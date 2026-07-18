@@ -65,8 +65,9 @@ Die stap claimt beide GPU's een tijd - start hem wanneer het uitkomt met:
   ;;
 
 video)
-  log "wacht op eerste dg_sync-run"
-  while running 'python3 dg_sync\.py'; do sleep 300; done
+  log "wacht op gedistribueerde dg-run (lokale shards + remote workers + puller)"
+  while running 'python3 dg_sync\.py' || running 'dg_pull\.sh' \
+        || ls /data/WILDERS/.dg_remote_*.active > /dev/null 2>&1; do sleep 300; done
   N=$(ls /data/WILDERS/debatgemist/*.mp4 2>/dev/null | grep -vc part)
   GB=$(du -sh /data/WILDERS/debatgemist 2>/dev/null | cut -f1)
   restart_app

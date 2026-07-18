@@ -31,8 +31,9 @@ start_if_absent 'python3 (ob_sync|ob_parse)\.py' bash -c 'python3 ob_sync.py && 
 # 2. youtube audio (rate-limit friendly; archive.txt makes it incremental)
 start_if_absent 'python3 yt_sync\.py' python3 yt_sync.py
 
-# 3. debate videos (file-exists + state.json make it incremental)
-start_if_absent 'python3 dg_sync\.py' python3 dg_sync.py
+# 3. debate videos: distributed shards (local + remote hosts) + puller;
+# dg_distributed.sh is itself idempotent and remote workers survive our reboots
+./dg_distributed.sh
 
 # 4. search app — runs as a systemd --user service (auto-starts at boot via
 # linger); this just makes sure it is up after a manual resume.

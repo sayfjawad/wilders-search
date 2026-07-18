@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Distributed Debat Direct download: 8 shards over 4 hosts + a puller that
+# drains remote output back to /data/WILDERS/debatgemist.
+# Idempotent: starts only what is not already running — safe from resume.sh,
+# cron @reboot or by hand. Remote workers survive Z8 reboots on their own.
+# Markers /data/WILDERS/.dg_remote_<shard>.active tell dg_pull.sh and
+# milestone_watch.sh which remote shards are (still) in flight.
+cd "$(dirname "$0")"
+DG=/data/WILDERS/debatgemist
+LOG=/data/WILDERS/pipeline.log
+N=8
+LOCAL_SHARDS="0 1 2"
+# host:shard:remote-workdir[:pull-bwlimit]  (bwlimit protects the PRD node's link)
+REMOTES="
+sayf@100.64.0.3:3:/home/sayf/wilders_dg
+sayf@100.64.0.3:4:/home/sayf/wilders_dg
+sayf@100.64.0.13:5:/data/wilders_dg:12m
+sayf@100.64.0.13:6:/data/wilders_dg:12m
+sayf@100.64.0.5:7:/home/sayf/wilders_dg
+"
+
+echo "--- dg_distributed $(date '+%F %T')"
+
+# fresh work manifest for the remote workers
+python3 dg_sync.py --export-dates "$DG/dates.json"
+ls "$DG"/*.mp4 2>/dev/null | grep -v '\.part\.mp4' | xargs -rn1 basename > "$DG/have.txt"
+
+for s in $LOCAL_SHARDS; do
+  if pgrep -f "dg_sync.py --shard $s/$N" > /dev/null; then
+    echo "  lokale shard $s/$N draait al"
+  else
+    nohup python3 dg_sync.py --shard "$s/$N" >> "$LOG" 2>&1 &
+    echo "  lokale shard $s/$N gestart (pid $!)"
+  fi
+done
+
+SSH="ssh -n -o BatchMode=yes -o ConnectTimeout=10"
+for spec in $REMOTES; do
+  IFS=: read -r host shard wd bw <<< "$spec"
+  timeout 30 $SSH "$host" "pgrep -f 'dg_sync.py.*--shard $shard/$N'" > /dev/null 2>&1
+  rc=$?
+  if [ $rc -eq 0 ]; then
+    echo "  remote shard $shard/$N draait al op $host"
+  elif [ $rc -eq 1 ]; then
+    # launch in a subshell so the remote bash exits immediately and ssh
+    # cannot hang on the detached worker's inherited descriptors
+    timeout 60 $SSH "$host" "mkdir -p $wd/out && rm -f $wd/out/*.part.mp4" \
+      && timeout 120 scp -q dg_sync.py "$DG/dates.json" "$DG/have.txt" "$host:$wd/" \
+      && timeout 30 $SSH "$host" "cd $wd && (setsid nohup python3 dg_sync.py \
+           --dates-json dates.json --have have.txt --dest out --shard $shard/$N \
+           >> worker.log 2>&1 < /dev/null &); exit 0" \
+      && echo "  remote shard $shard/$N gestart op $host" \
+      || { echo "  remote shard $shard/$N starten op $host FAALDE"; continue; }
+  else
+    echo "  $host onbereikbaar (rc=$rc); shard $shard/$N overgeslagen"
+    continue
+  fi
+  echo "$host $wd ${bw:-0}" > "/data/WILDERS/.dg_remote_${shard}.active"
+done
+
+if pgrep -f 'dg_pull\.sh' > /dev/null; then
+  echo "  puller draait al"
+else
+  setsid nohup ./dg_pull.sh >> /data/WILDERS/dg_pull.log 2>&1 < /dev/null &
+  echo "  puller gestart (pid $!)"
+fi
+echo "--- dg_distributed klaar"

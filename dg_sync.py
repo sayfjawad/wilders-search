@@ -17,6 +17,7 @@ Mapping is stored in <data>/debatgemist/state.json.
 
 The archive reaches back to ~2010; days before that simply yield no video.
 """
+import argparse
 import json
 import re
 import subprocess
@@ -27,7 +28,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from pipeline_config import load_config
+# pipeline_config is imported lazily in main(): remote shard workers get only
+# this file + a dates JSON, without the rest of the repo.
 
 API = "https://api.debatdirect.tweedekamer.nl/api"
 PLENAIR_LOCATION = "plenaire-zaal"
@@ -92,6 +94,26 @@ def variant_duration(url: str) -> float:
     return sum(float(x) for x in re.findall(r"#EXTINF:([\d.]+)", pl))
 
 
+def hls_input_opts() -> list[str]:
+    """ffmpeg >= 7/8 refuses the Kamer-CDN's .m4v HLS segments unless the
+    extension allowlist is relaxed; older versions lack (some of) the options,
+    so detect what this ffmpeg supports."""
+    try:
+        h = subprocess.run(["ffmpeg", "-hide_banner", "-h", "demuxer=hls"],
+                           capture_output=True, text=True, timeout=15).stdout
+    except Exception:
+        return []
+    opts = []
+    if "allowed_extensions" in h:
+        opts += ["-allowed_extensions", "ALL"]
+    if "extension_picky" in h:
+        opts += ["-extension_picky", "0"]
+    return opts
+
+
+HLS_OPTS = hls_input_opts()
+
+
 def download_debate(master_url: str, dest: Path) -> bool:
     streams = pick_streams(master_url)
     if not streams:
@@ -101,10 +123,10 @@ def download_debate(master_url: str, dest: Path) -> bool:
     if variant_duration(video_url) < 60:
         return False
     tmp = dest.with_suffix(".part.mp4")
-    cmd = ["ffmpeg", "-v", "error", "-y", "-i", video_url]
+    cmd = ["ffmpeg", "-v", "error", "-y", *HLS_OPTS, "-i", video_url]
     maps = ["-map", "0:v"]
     if audio_url:
-        cmd += ["-i", audio_url]
+        cmd += [*HLS_OPTS, "-i", audio_url]
         maps += ["-map", "1:a"]
     cmd += maps + ["-c", "copy", str(tmp)]
     rc = subprocess.run(cmd).returncode
@@ -115,16 +137,8 @@ def download_debate(master_url: str, dest: Path) -> bool:
     return True
 
 
-def main():
-    cfg = load_config(sys.argv[1] if len(sys.argv) > 1 else None)
-    paths = cfg["_paths"]
-    achternaam = cfg["tk"]["match"]["achternaam"]
-    dg_dir = paths["data"] / "debatgemist"
-    dg_dir.mkdir(parents=True, exist_ok=True)
-    state_path = dg_dir / "state.json"
-    state = json.loads(state_path.read_text()) if state_path.exists() else {}
-
-    # collect person wallclocks per date from TK transcripts
+def build_dates(paths, achternaam) -> dict[str, list[datetime]]:
+    """Collect person wallclocks per date from the local TK transcripts."""
     dates: dict[str, list[datetime]] = {}
     for meta_path in sorted(paths["transcripts"].glob("tk_*.metadata.json")):
         base = meta_path.name[: -len(".metadata.json")]
@@ -137,10 +151,61 @@ def main():
         wcs = person_wallclocks(transcript, achternaam)
         if wcs:
             dates.setdefault(date_iso, []).extend(wcs)
+    return dates
 
-    print(f"{len(dates)} dates with {achternaam} speech to check", flush=True)
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("slug", nargs="?", default=None, help="config slug (default wilders)")
+    ap.add_argument("--shard", metavar="I/N", default=None,
+                    help="only process dates whose sorted index modulo N equals I")
+    ap.add_argument("--dates-json", metavar="FILE", default=None,
+                    help="read {date: [wallclock,..]} from FILE instead of local "
+                         "transcripts+config (for remote shard workers)")
+    ap.add_argument("--export-dates", metavar="FILE", default=None,
+                    help="write the dates JSON for remote workers and exit")
+    ap.add_argument("--dest", metavar="DIR", default=None,
+                    help="download directory (default <data>/debatgemist)")
+    ap.add_argument("--have", metavar="FILE", default=None,
+                    help="file with mp4 basenames that exist elsewhere; skip those")
+    args = ap.parse_args()
+
+    if args.dates_json:
+        raw = json.loads(Path(args.dates_json).read_text(encoding="utf-8"))
+        dates = {d: [datetime.fromisoformat(x) for x in wcs] for d, wcs in raw.items()}
+        dg_dir = Path(args.dest) if args.dest else Path("out")
+    else:
+        from pipeline_config import load_config
+        cfg = load_config(args.slug)
+        paths = cfg["_paths"]
+        dates = build_dates(paths, cfg["tk"]["match"]["achternaam"])
+        dg_dir = Path(args.dest) if args.dest else paths["data"] / "debatgemist"
+    dg_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.export_dates:
+        Path(args.export_dates).write_text(json.dumps(
+            {d: [wc.isoformat() for wc in wcs] for d, wcs in sorted(dates.items())},
+            ensure_ascii=False), encoding="utf-8")
+        print(f"{len(dates)} dates exported to {args.export_dates}")
+        return
+
+    shard_i = shard_n = None
+    if args.shard:
+        shard_i, shard_n = map(int, args.shard.split("/"))
+    # sharded runs keep their own state file so parallel workers never write
+    # the same file; dg_pull.sh merges them into state.json for the app
+    state_path = dg_dir / (f"state.{shard_i}of{shard_n}.json" if args.shard else "state.json")
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    have = set()
+    if args.have:
+        have = {ln.strip() for ln in Path(args.have).read_text().splitlines() if ln.strip()}
+
+    print(f"{len(dates)} dates to check"
+          + (f" (shard {args.shard})" if args.shard else ""), flush=True)
     n_new = n_skip = n_novideo = 0
-    for date_iso in sorted(dates):
+    for idx, date_iso in enumerate(sorted(dates)):
+        if shard_n is not None and idx % shard_n != shard_i:
+            continue
         try:
             agenda = get_json(f"{API}/agenda/{date_iso}")
         except Exception as e:
@@ -158,7 +223,10 @@ def main():
             slug = deb.get("slug") or deb["id"][:8]
             dest = dg_dir / f"{date_iso}_{slug}.mp4"
             key = dest.name
-            if dest.exists():
+            # `key in state` covers files a remote worker downloaded that the
+            # puller already drained; `have` covers files downloaded before
+            # this worker's shard started
+            if dest.exists() or key in have or key in state:
                 n_skip += 1
                 continue
             try:
