@@ -8,16 +8,11 @@
 cd "$(dirname "$0")"
 DG=/data/WILDERS/debatgemist
 LOG=/data/WILDERS/pipeline.log
-N=8
-LOCAL_SHARDS="0 1 2"
-# host:shard:remote-workdir[:pull-bwlimit]  (bwlimit protects the PRD node's link)
-REMOTES="
-sayf@100.64.0.3:3:/home/sayf/wilders_dg
-sayf@100.64.0.3:4:/home/sayf/wilders_dg
-sayf@100.64.0.13:5:/data/wilders_dg:12m
-sayf@100.64.0.13:6:/data/wilders_dg:12m
-sayf@100.64.0.5:7:/home/sayf/wilders_dg
-"
+# shard layout + remote hosts live in hosts.env (untracked; see hosts.env.example)
+N=1
+LOCAL_SHARDS="0"
+REMOTES=""
+[ -f hosts.env ] && . ./hosts.env
 
 echo "--- dg_distributed $(date '+%F %T')"
 

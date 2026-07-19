@@ -3,3 +3,4 @@ __pycache__/
 index/
 .venv/
 stats.sqlite
+hosts.env
