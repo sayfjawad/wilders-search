@@ -114,6 +114,16 @@ def hls_input_opts() -> list[str]:
 HLS_OPTS = hls_input_opts()
 
 
+# the Kamer CDN occasionally half-closes a segment connection mid-stream
+# without ffmpeg noticing (observed: two multi-hour "marathon" debates, APB
+# and a corona debate, hung for 24+ h with sockets stuck in CLOSE-WAIT and
+# blocked every later date behind them on that shard). -rw_timeout makes
+# ffmpeg itself give up on a stalled read; the subprocess timeout is a
+# backstop for ffmpeg builds that don't honor it.
+STALL_TIMEOUT_US = 20_000_000   # 20s, per read
+PROC_TIMEOUT_S = 4 * 3600       # generous cap for the longest marathon debates
+
+
 def download_debate(master_url: str, dest: Path) -> bool:
     streams = pick_streams(master_url)
     if not streams:
@@ -123,13 +133,17 @@ def download_debate(master_url: str, dest: Path) -> bool:
     if variant_duration(video_url) < 60:
         return False
     tmp = dest.with_suffix(".part.mp4")
-    cmd = ["ffmpeg", "-v", "error", "-y", *HLS_OPTS, "-i", video_url]
+    rw = ["-rw_timeout", str(STALL_TIMEOUT_US)]
+    cmd = ["ffmpeg", "-v", "error", "-y", *HLS_OPTS, *rw, "-i", video_url]
     maps = ["-map", "0:v"]
     if audio_url:
-        cmd += [*HLS_OPTS, "-i", audio_url]
+        cmd += [*HLS_OPTS, *rw, "-i", audio_url]
         maps += ["-map", "1:a"]
     cmd += maps + ["-c", "copy", str(tmp)]
-    rc = subprocess.run(cmd).returncode
+    try:
+        rc = subprocess.run(cmd, timeout=PROC_TIMEOUT_S).returncode
+    except subprocess.TimeoutExpired:
+        rc = 1
     if rc != 0 or not tmp.exists():
         tmp.unlink(missing_ok=True)
         return False
