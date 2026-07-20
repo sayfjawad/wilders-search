@@ -16,6 +16,25 @@ REMOTES=""
 
 echo "--- dg_distributed $(date '+%F %T')"
 
+# `kill <pid>` on a dg_sync.py shard only signals that process, not its
+# ffmpeg child (started via plain subprocess.run, no process-group setup) --
+# the child survives as an orphan (reparented to init) and can keep writing
+# to the same target a freshly (re)started shard also picks up, corrupting
+# both. Kill any such orphan and its now-stale .part.mp4 before (re)starting.
+reap_orphan_ffmpeg() {  # <dir with .part.mp4 outputs>
+  local dir=$1
+  for pid in $(pgrep -f 'ffmpeg.*\.part\.mp4' 2>/dev/null); do
+    [ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" = "1" ] || continue
+    kill -9 "$pid" 2>/dev/null && echo "  wees-ffmpeg gekilld: pid $pid"
+  done
+  sleep 1
+  for f in "$dir"/*.part.mp4; do
+    [ -e "$f" ] || continue
+    pgrep -f "ffmpeg.*$(basename "$f")" > /dev/null || { rm -f "$f"; echo "  stale part verwijderd: $(basename "$f")"; }
+  done
+}
+reap_orphan_ffmpeg "$DG"
+
 # fresh work manifest for the remote workers
 python3 dg_sync.py --export-dates "$DG/dates.json"
 ls "$DG"/*.mp4 2>/dev/null | grep -v '\.part\.mp4' | xargs -rn1 basename > "$DG/have.txt"
@@ -29,9 +48,21 @@ for s in $LOCAL_SHARDS; do
   fi
 done
 
+REMOTE_REAP='
+for pid in $(pgrep -f "ffmpeg.*\.part\.mp4" 2>/dev/null); do
+  [ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d " ")" = "1" ] || continue
+  kill -9 "$pid" 2>/dev/null && echo "  wees-ffmpeg gekilld op $(hostname): pid $pid"
+done
+sleep 1
+for f in "$1"/*.part.mp4; do
+  [ -e "$f" ] || continue
+  pgrep -f "ffmpeg.*$(basename "$f")" > /dev/null || { rm -f "$f"; echo "  stale part verwijderd op $(hostname): $(basename "$f")"; }
+done'
+
 SSH="ssh -n -o BatchMode=yes -o ConnectTimeout=10"
 for spec in $REMOTES; do
   IFS=: read -r host shard wd bw <<< "$spec"
+  timeout 30 $SSH "$host" "bash -s -- '$wd/out'" <<< "$REMOTE_REAP" 2>&1 | sed 's/^/  /'
   timeout 30 $SSH "$host" "pgrep -f 'dg_sync.py.*--shard $shard/$N'" > /dev/null 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then
