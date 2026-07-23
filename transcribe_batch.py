@@ -10,6 +10,8 @@ For every <data>/youtube/<base>.opus without a transcripts/yt_<base>.json:
 Pass --diarize to enable speaker diarization (needs HF_TOKEN in the env).
 Pass --shard K/N to process only files with index % N == K (parallel workers
 on multiple GPUs/machines); a final run without --shard sweeps leftovers.
+Pass --force to redo files that already have a transcript (e.g. adding
+diarization to a batch that was first transcribed without it).
 """
 import json
 import os
@@ -45,17 +47,34 @@ def run_whisperx(audio: Path, wx: dict, diarize: bool, tmp_dir: str) -> dict | N
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def convert(wx_result: dict, info: dict) -> tuple[dict, dict]:
-    segments = []
+def convert(wx_result: dict, info: dict, person: str = "") -> tuple[dict, dict]:
+    raw = []
     for seg in wx_result.get("segments", []):
         text = (seg.get("text") or "").strip()
         if not text:
             continue
-        speaker = seg.get("speaker") or ""
+        raw.append((seg.get("speaker") or "", seg,  text))
+
+    # Diarization clusters voices (SPEAKER_00, ...) but doesn't know who they
+    # are. For single-uploader channel content the channel's own person talks
+    # the most by a wide margin, so label the majority-airtime voice with
+    # their name and leave every other voice as an anonymous SPEAKER_NN --
+    # honest about not knowing who they are, but no longer invisible to the
+    # "only statements by <person>" filter, which used to exclude ALL
+    # non-diarized ASR content (every segment had speaker == "").
+    airtime: dict[str, float] = {}
+    for spk, seg, _ in raw:
+        if spk:
+            airtime[spk] = airtime.get(spk, 0.0) + (float(seg.get("end", 0)) - float(seg.get("start", 0)))
+    majority = max(airtime, key=airtime.get) if airtime else None
+
+    segments = []
+    for spk, seg, text in raw:
+        label = person if (person and spk == majority) else spk
         segments.append(
             {
-                "speaker_id": speaker,
-                "speaker": speaker,
+                "speaker_id": spk,
+                "speaker": label,
                 "start": round(float(seg.get("start", 0)), 2),
                 "end": round(float(seg.get("end", 0)), 2),
                 "text": text,
@@ -78,6 +97,7 @@ def convert(wx_result: dict, info: dict) -> tuple[dict, dict]:
 
 def main():
     diarize = "--diarize" in sys.argv
+    force = "--force" in sys.argv
     shard_k, shard_n = 0, 1
     argv = sys.argv[1:]
     if "--shard" in argv:
@@ -95,7 +115,7 @@ def main():
         if idx % shard_n != shard_k:
             continue
         base = f"yt_{audio.stem}"
-        if not (paths["transcripts"] / f"{base}.json").exists():
+        if force or not (paths["transcripts"] / f"{base}.json").exists():
             todo.append((audio, base))
     print(f"{len(todo)} audio files to transcribe (shard {shard_k}/{shard_n})")
 
@@ -107,7 +127,7 @@ def main():
             result = run_whisperx(audio, wx, diarize, tmp_dir)
         if result is None:
             continue
-        transcript, metadata = convert(result, info)
+        transcript, metadata = convert(result, info, cfg.get("person", ""))
         (paths["transcripts"] / f"{base}.json").write_text(
             json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
         )
