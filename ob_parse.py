@@ -120,14 +120,23 @@ def main():
     ensure_dirs(cfg)
     paths = cfg["_paths"]
     match_naam = cfg["ob"]["match_naam"]
-    xml_dir = paths["data"] / "ob" / "xml"
-    state_path = paths["data"] / "ob" / "state.json"
+    xml_dir = paths["ob_xml"]
+    state_path = paths["ob_state"]
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
-    written = skipped = 0
+    # Output goes to the SHARED transcript pool: parse_document() keeps every
+    # speaker in the document, not just this config's person, so a document
+    # already parsed (by this or any other tracked person's run) is reused
+    # as-is -- same Handeling, same content, no need to redo the work.
+    written = skipped = reused = 0
     for ident, info in sorted(state.items()):
         xml_path = xml_dir / f"{ident}.xml"
         if not xml_path.exists():
+            continue
+        date = (info.get("date") or "").replace("-", "")
+        base = f"ob_{date or 'nodate'}_{ident}"
+        if (paths["shared_transcripts"] / f"{base}.metadata.json").exists():
+            reused += 1
             continue
         try:
             segments = parse_document(xml_path, match_naam)
@@ -137,8 +146,6 @@ def main():
         if not segments:
             skipped += 1
             continue
-        date = (info.get("date") or "").replace("-", "")
-        base = f"ob_{date or 'nodate'}_{ident}"
         title = info.get("title") or ident
         transcript = {"title": title, "duration_seconds": 0, "segments": segments}
         metadata = {
@@ -149,17 +156,18 @@ def main():
             "duration_seconds": 0,
             "source": "ob_handelingen",
             "transcript_source": "official",
+            "speakers": sorted({s["speaker"] for s in segments if s.get("speaker")}),
         }
-        (paths["transcripts"] / f"{base}.json").write_text(
+        (paths["shared_transcripts"] / f"{base}.json").write_text(
             json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
         )
-        (paths["transcripts"] / f"{base}.metadata.json").write_text(
+        (paths["shared_transcripts"] / f"{base}.metadata.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         written += 1
         if written % 200 == 0:
             print(f"  ... {written} transcripts", flush=True)
-    print(f"done: {written} transcripts, {skipped} without {match_naam} speaking")
+    print(f"done: {written} new, {reused} already in shared pool, {skipped} without {match_naam} speaking")
 
 
 if __name__ == "__main__":

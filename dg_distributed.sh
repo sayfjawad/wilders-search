@@ -6,7 +6,10 @@
 # Markers /data/WILDERS/.dg_remote_<shard>.active tell dg_pull.sh and
 # milestone_watch.sh which remote shards are (still) in flight.
 cd "$(dirname "$0")"
-DG=/data/WILDERS/debatgemist
+# debatgemist is the SHARED video pool (see pipeline_config.py) -- resolved
+# dynamically so this always matches the active PERSON's config instead of
+# hardcoding a path that stops being true once more than one person exists.
+DG=$(python3 -c 'from pipeline_config import load_config; print(load_config()["_paths"]["debatgemist"])')
 LOG=/data/WILDERS/pipeline.log
 # shard layout + remote hosts live in hosts.env (untracked; see hosts.env.example)
 N=1

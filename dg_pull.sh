@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Drains remote dg shard output into /data/WILDERS/debatgemist and merges all
-# shard state files into state.json (only entries whose mp4 exists locally, so
-# the app never gets a window pointing at a file that is still on a remote).
-# Removes a shard's .active marker once its worker stopped and its output is
-# fully drained; exits when no markers remain. Log: /data/WILDERS/dg_pull.log
+# Drains remote dg shard output into the SHARED debatgemist video pool and
+# merges all shard state files into state.json (only entries whose mp4
+# exists locally, so the app never gets a window pointing at a file that is
+# still on a remote). Removes a shard's .active marker once its worker
+# stopped and its output is fully drained; exits when no markers remain.
+# Log: /data/WILDERS/dg_pull.log
 cd "$(dirname "$0")"
-DG=/data/WILDERS/debatgemist
+DG=$(python3 -c 'from pipeline_config import load_config; print(load_config()["_paths"]["debatgemist"])')
 N=8
 
 merge_states() {
 python3 - <<'EOF'
 import json
 from pathlib import Path
-dg = Path('/data/WILDERS/debatgemist')
+from pipeline_config import load_config
+dg = load_config()["_paths"]["debatgemist"]
 main = dg / 'state.json'
 state = json.loads(main.read_text()) if main.exists() else {}
 n0 = len(state)

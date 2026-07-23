@@ -52,9 +52,13 @@ def sru_page(base: str, query: str, start: int) -> ET.Element:
 def main():
     cfg = load_config(sys.argv[1] if len(sys.argv) > 1 else None)
     ob = cfg["ob"]
-    xml_dir = cfg["_paths"]["data"] / "ob" / "xml"
+    # shared pool: an SRU search is per-person (filtered by name in the
+    # query), but the downloaded XML itself is shared across everyone --
+    # dest.exists() below means a document another person's run already
+    # fetched is never re-downloaded, just re-listed.
+    xml_dir = cfg["_paths"]["ob_xml"]
     xml_dir.mkdir(parents=True, exist_ok=True)
-    state_path = cfg["_paths"]["data"] / "ob" / "state.json"
+    state_path = cfg["_paths"]["ob_state"]
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
     query = (

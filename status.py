@@ -28,18 +28,23 @@ def main():
     cfg = load_config(sys.argv[1] if len(sys.argv) > 1 else None)
     p = cfg["_paths"]
     data = p["data"]
-    dg = data / "debatgemist"
+    dg = p["debatgemist"]
 
+    # tk/ob xml + transcript counts reflect the whole SHARED pool (raw
+    # material + parsed multi-speaker debates), not just what mentions this
+    # person -- with only one tracked person today the two are identical;
+    # once a second person's config shares this pool they will diverge, and
+    # build_index.py is what actually filters to "relevant to this person".
     snap = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "tk": {
-            "xml": count((data / "tk" / "xml").glob("*.xml")),
-            "transcripts": count(p["transcripts"].glob("tk_*.metadata.json")),
+            "xml": count(p["tk_xml"].glob("*.xml")),
+            "transcripts": count(p["shared_transcripts"].glob("tk_*.metadata.json")),
             "sync_running": running(r"python3 (tk_sync|tk_parse)\.py"),
         },
         "ob": {
-            "xml": count((data / "ob" / "xml").glob("*.xml")),
-            "transcripts": count(p["transcripts"].glob("ob_*.metadata.json")),
+            "xml": count(p["ob_xml"].glob("*.xml")),
+            "transcripts": count(p["shared_transcripts"].glob("ob_*.metadata.json")),
             "sync_running": running(r"python3 (ob_sync|ob_parse)\.py"),
         },
         "youtube": {

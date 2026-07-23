@@ -22,7 +22,8 @@ start_if_absent() {  # <pgrep-pattern> <command...>
 }
 
 # leftover partial video downloads from a crash (only when dg_sync is not active)
-pgrep -f 'python3 dg_sync\.py' > /dev/null || rm -f /data/WILDERS/debatgemist/*.part.mp4
+DG=$(python3 -c 'from pipeline_config import load_config; print(load_config()["_paths"]["debatgemist"])')
+pgrep -f 'python3 dg_sync\.py' > /dev/null || rm -f "$DG"/*.part.mp4
 
 # 1. text sources (each chains its parser; both incremental)
 start_if_absent 'python3 (tk_sync|tk_parse)\.py' bash -c 'python3 tk_sync.py && python3 tk_parse.py'

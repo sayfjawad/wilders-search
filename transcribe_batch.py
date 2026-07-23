@@ -2,12 +2,22 @@
 the abo-ali format to <data>/transcripts/.
 
 For every <data>/youtube/<base>.opus without a transcripts/yt_<base>.json:
-  - runs the whisperx CLI (json output) with settings from the config
+  - runs whisperx (CLI for plain ASR; Python API for --diarize, see below)
   - converts segments to {speaker_id, speaker, start, end, text}
   - writes yt_<base>.json + yt_<base>.metadata.json (url, title, upload_date
     from the .info.json; transcript_source: "asr")
 
-Pass --diarize to enable speaker diarization (needs HF_TOKEN in the env).
+Pass --diarize to enable speaker diarization. This uses the pyannote Python
+API directly (whisperx.load_audio + whisperx model + pyannote.audio.Pipeline
++ assign_word_speakers), the exact pattern scrib-r's proven
+batch/transcribe_abo_ali.py already runs at scale -- NOT whisperx's built-in
+`--diarize` CLI flag, whose internal audio-loading path pulls in torchcodec,
+which crashed on this machine with library/CUDA-ABI mismatches (undefined
+symbols, missing libnvrtc.so.13) and silently produced empty transcripts for
+~16 files. Run this mode with scrib-r's own venv, which has the compatible
+versions already proven to work:
+    /data/git/scrib-r/venv/bin/python3 transcribe_batch.py --diarize ...
+
 Pass --shard K/N to process only files with index % N == K (parallel workers
 on multiple GPUs/machines); a final run without --shard sweeps leftovers.
 Pass --force to redo files that already have a transcript (e.g. adding
@@ -22,8 +32,10 @@ from pathlib import Path
 
 from pipeline_config import load_config, ensure_dirs
 
+DIARIZATION_MODEL = os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
 
-def run_whisperx(audio: Path, wx: dict, diarize: bool, tmp_dir: str) -> dict | None:
+
+def run_whisperx_cli(audio: Path, wx: dict, tmp_dir: str) -> dict | None:
     cmd = [
         "whisperx", str(audio),
         "--model", wx.get("model", "large-v3"),
@@ -33,10 +45,6 @@ def run_whisperx(audio: Path, wx: dict, diarize: bool, tmp_dir: str) -> dict | N
         "--output_dir", tmp_dir,
         "--output_format", "json",
     ]
-    if diarize:
-        cmd += ["--diarize"]
-        if os.environ.get("HF_TOKEN"):
-            cmd += ["--hf_token", os.environ["HF_TOKEN"]]
     rc = subprocess.run(cmd).returncode
     if rc != 0:
         print(f"  whisperx exited {rc} for {audio.name}", file=sys.stderr)
@@ -47,13 +55,56 @@ def run_whisperx(audio: Path, wx: dict, diarize: bool, tmp_dir: str) -> dict | N
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def convert(wx_result: dict, info: dict, person: str = "") -> tuple[dict, dict]:
+class DiarizedTranscriber:
+    """Loads the whisperx model + pyannote diarization pipeline once and
+    reuses them for every file -- same shape as scrib-r's DiarizedTranscriber
+    in batch/transcribe_abo_ali.py, adapted to this repo's segment format."""
+
+    def __init__(self, wx: dict):
+        import torch
+        import whisperx
+        from pyannote.audio import Pipeline
+
+        self._torch = torch
+        self._whisperx = whisperx
+        self.batch_size = wx.get("batch_size", 16)
+        self.language = wx.get("language", "nl")
+        self.torch_device = torch.device("cuda:0")  # CUDA_VISIBLE_DEVICES pins the physical GPU
+
+        self.whisper_model = whisperx.load_model(
+            wx.get("model", "large-v3"), device="cuda", device_index=0, compute_type="float16",
+        )
+        hf_token = os.environ.get("HF_TOKEN") or None
+        try:
+            self.diarization_pipeline = Pipeline.from_pretrained(DIARIZATION_MODEL, token=hf_token)
+        except TypeError:
+            self.diarization_pipeline = Pipeline.from_pretrained(DIARIZATION_MODEL, use_auth_token=hf_token)
+        self.diarization_pipeline.to(self.torch_device)
+
+    def transcribe(self, audio_path: Path) -> list[dict]:
+        audio = self._whisperx.load_audio(str(audio_path))
+        result = self.whisper_model.transcribe(audio, batch_size=self.batch_size, language=self.language)
+
+        waveform = self._torch.from_numpy(audio).unsqueeze(0)  # [1, N], already 16kHz mono
+        diarization = self.diarization_pipeline({"waveform": waveform, "sample_rate": 16000})
+        annotation = getattr(diarization, "speaker_diarization", diarization)
+
+        import pandas as pd
+        diarize_df = pd.DataFrame([
+            {"start": turn.start, "end": turn.end, "speaker": speaker}
+            for turn, _, speaker in annotation.itertracks(yield_label=True)
+        ])
+        result = self._whisperx.assign_word_speakers(diarize_df, result)
+        return result["segments"]
+
+
+def convert(segments: list[dict], info: dict, person: str = "") -> tuple[dict, dict]:
     raw = []
-    for seg in wx_result.get("segments", []):
+    for seg in segments:
         text = (seg.get("text") or "").strip()
         if not text:
             continue
-        raw.append((seg.get("speaker") or "", seg,  text))
+        raw.append((seg.get("speaker") or "", seg, text))
 
     # Diarization clusters voices (SPEAKER_00, ...) but doesn't know who they
     # are. For single-uploader channel content the channel's own person talks
@@ -68,10 +119,10 @@ def convert(wx_result: dict, info: dict, person: str = "") -> tuple[dict, dict]:
             airtime[spk] = airtime.get(spk, 0.0) + (float(seg.get("end", 0)) - float(seg.get("start", 0)))
     majority = max(airtime, key=airtime.get) if airtime else None
 
-    segments = []
+    segments_out = []
     for spk, seg, text in raw:
         label = person if (person and spk == majority) else spk
-        segments.append(
+        segments_out.append(
             {
                 "speaker_id": spk,
                 "speaker": label,
@@ -81,8 +132,8 @@ def convert(wx_result: dict, info: dict, person: str = "") -> tuple[dict, dict]:
             }
         )
     title = info.get("title", "")
-    duration = info.get("duration") or (segments[-1]["end"] if segments else 0)
-    transcript = {"title": title, "duration_seconds": duration, "segments": segments}
+    duration = info.get("duration") or (segments_out[-1]["end"] if segments_out else 0)
+    transcript = {"title": title, "duration_seconds": duration, "segments": segments_out}
     metadata = {
         "id": info.get("id", ""),
         "title": title,
@@ -109,6 +160,7 @@ def main():
     ensure_dirs(cfg)
     paths = cfg["_paths"]
     wx = cfg.get("whisperx", {})
+    person = cfg.get("person", "")
 
     todo = []
     for idx, audio in enumerate(sorted(paths["youtube"].glob("*.opus"))):
@@ -119,15 +171,25 @@ def main():
             todo.append((audio, base))
     print(f"{len(todo)} audio files to transcribe (shard {shard_k}/{shard_n})")
 
+    transcriber = DiarizedTranscriber(wx) if diarize else None
+
     for i, (audio, base) in enumerate(todo, 1):
         info_path = audio.with_suffix(".info.json")
         info = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else {}
         print(f"[{i}/{len(todo)}] {audio.name}", flush=True)
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            result = run_whisperx(audio, wx, diarize, tmp_dir)
-        if result is None:
+        try:
+            if transcriber is not None:
+                segments = transcriber.transcribe(audio)
+            else:
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    result = run_whisperx_cli(audio, wx, tmp_dir)
+                segments = result["segments"] if result else None
+        except Exception as e:
+            print(f"  failed: {audio.name}: {e}", file=sys.stderr)
             continue
-        transcript, metadata = convert(result, info, cfg.get("person", ""))
+        if not segments:
+            continue
+        transcript, metadata = convert(segments, info, person)
         (paths["transcripts"] / f"{base}.json").write_text(
             json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
         )

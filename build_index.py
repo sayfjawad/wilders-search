@@ -1,4 +1,5 @@
-"""Build the search index from <data>/transcripts/.
+"""Build the search index from the shared transcript pool + this person's
+own transcripts.
 
 Same design as abo-ali-search: reads every <base>.json + <base>.metadata.json,
 merges consecutive same-speaker segments into ~700-char retrieval chunks,
@@ -8,7 +9,17 @@ embeds them with BGE-M3 on GPU, and writes:
 
 Extra columns vs abo-ali: videos.source ("tk_verslag" / "youtube:<channel>")
 and videos.transcript_source ("official" / "asr").
+
+Two sources, per pipeline_config.py:
+  - <shared>/transcripts: tk_*/ob_* multi-speaker debate transcripts, shared
+    across every tracked person -- included here only when this person's
+    name appears in that transcript's `speakers` list (see tk_parse.py/
+    ob_parse.py), so each person's index covers only debates they were
+    actually in, even though the transcript pool itself is shared.
+  - <data>/transcripts: this person's own YouTube ASR transcripts (yt_*),
+    never shared with anyone else's index.
 """
+import itertools
 import json
 import sqlite3
 import sys
@@ -36,6 +47,29 @@ def iter_videos(transcripts_dir: Path):
             print(f"skip {base}: {e}", file=sys.stderr)
             continue
         yield base, meta, transcript
+
+
+def person_matches(speakers: list[str], cfg: dict) -> bool:
+    """Same substring-match convention as tk_parse.person_speaks() / the
+    match_naam check in ob_parse.parse_document(), applied to a shared
+    transcript's precomputed speaker list instead of re-parsing segments."""
+    tk_match = cfg.get("tk", {}).get("match", {})
+    achter = (tk_match.get("achternaam") or "").lower()
+    voor = (tk_match.get("voornaam") or "").lower()
+    ob_naam = (cfg.get("ob", {}).get("match_naam") or "").lower()
+    for name in speakers:
+        n = name.lower()
+        if achter and achter in n and (not voor or voor in n):
+            return True
+        if ob_naam and ob_naam in n:
+            return True
+    return False
+
+
+def iter_shared_for_person(shared_dir: Path, cfg: dict):
+    for base, meta, transcript in iter_videos(shared_dir):
+        if person_matches(meta.get("speakers") or [], cfg):
+            yield base, meta, transcript
 
 
 def merge_segments(segments):
@@ -102,7 +136,10 @@ def main():
     all_texts = []
     chunk_id = 0
     n_videos = 0
-    for base, meta, transcript in iter_videos(paths["transcripts"]):
+    for base, meta, transcript in itertools.chain(
+        iter_shared_for_person(paths["shared_transcripts"], cfg),
+        iter_videos(paths["transcripts"]),
+    ):
         chunks = merge_segments(transcript.get("segments") or [])
         if not chunks:
             continue

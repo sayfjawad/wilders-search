@@ -9,11 +9,14 @@ For each TK transcript (tk_*.json, produced by tk_parse.py) the script:
 4. fetches the debate's vodUrl and appends ?start=&end= (the windowing the
    web player uses) to get an HLS master for exactly that session,
 5. downloads lowest-bandwidth video + audio with ffmpeg (stream copy) to
-   <data>/debatgemist/<date>_<slug>.mp4.
+   <shared>/debatgemist/<date>_<slug>.mp4 -- a debate involves whoever spoke
+   in it, so the video pool (like the parsed transcripts) is shared across
+   every tracked person's config, keyed by date+slug; a session another
+   person's run already downloaded is simply reused.
 
 Video position 0 corresponds to the debate's startedAt wallclock, so
 playback offset for a transcript segment = wallclock - startedAt.
-Mapping is stored in <data>/debatgemist/state.json.
+Mapping is stored in <shared>/debatgemist/state.json.
 
 The archive reaches back to ~2010; days before that simply yield no video.
 """
@@ -154,14 +157,14 @@ def download_debate(master_url: str, dest: Path) -> bool:
 def build_dates(paths, achternaam) -> dict[str, list[datetime]]:
     """Collect person wallclocks per date from the local TK transcripts."""
     dates: dict[str, list[datetime]] = {}
-    for meta_path in sorted(paths["transcripts"].glob("tk_*.metadata.json")):
+    for meta_path in sorted(paths["shared_transcripts"].glob("tk_*.metadata.json")):
         base = meta_path.name[: -len(".metadata.json")]
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         d = meta.get("upload_date", "")
         if len(d) != 8:
             continue
         date_iso = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-        transcript = json.loads((paths["transcripts"] / f"{base}.json").read_text(encoding="utf-8"))
+        transcript = json.loads((paths["shared_transcripts"] / f"{base}.json").read_text(encoding="utf-8"))
         wcs = person_wallclocks(transcript, achternaam)
         if wcs:
             dates.setdefault(date_iso, []).extend(wcs)
@@ -193,7 +196,7 @@ def main():
         cfg = load_config(args.slug)
         paths = cfg["_paths"]
         dates = build_dates(paths, cfg["tk"]["match"]["achternaam"])
-        dg_dir = Path(args.dest) if args.dest else paths["data"] / "debatgemist"
+        dg_dir = Path(args.dest) if args.dest else paths["debatgemist"]
     dg_dir.mkdir(parents=True, exist_ok=True)
 
     if args.export_dates:

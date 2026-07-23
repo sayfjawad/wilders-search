@@ -187,10 +187,18 @@ def main():
     if not chosen:  # no sync state: parse every downloaded xml
         chosen = {p.stem: p.stem for p in paths["tk_xml"].glob("*.xml")}
 
-    written = skipped = 0
+    # Output goes to the SHARED transcript pool: the parser keeps every
+    # speaker in the vergadering, not just this config's person, so a
+    # vergadering already parsed (by this or any other tracked person's run)
+    # is reused as-is rather than reparsed -- same debate, same content.
+    written = skipped = reused = 0
     for verg, verslag_id in sorted(chosen.items()):
         xml_path = paths["tk_xml"] / f"{verslag_id}.xml"
         if not xml_path.exists():
+            continue
+        existing = list(paths["shared_transcripts"].glob(f"tk_*_{verslag_id[:8]}.metadata.json"))
+        if existing:
+            reused += 1
             continue
         result = parse_verslag(xml_path, verslag_id, match)
         if result is None:
@@ -198,15 +206,16 @@ def main():
             continue
         transcript, metadata = result
         base = f"tk_{metadata['upload_date'] or 'nodate'}_{verslag_id[:8]}"
-        (paths["transcripts"] / f"{base}.json").write_text(
+        metadata["speakers"] = sorted({s["speaker"] for s in transcript["segments"] if s.get("speaker")})
+        (paths["shared_transcripts"] / f"{base}.json").write_text(
             json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
         )
-        (paths["transcripts"] / f"{base}.metadata.json").write_text(
+        (paths["shared_transcripts"] / f"{base}.metadata.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         written += 1
         print(f"wrote {base} ({len(transcript['segments'])} segments)")
-    print(f"done: {written} transcripts, {skipped} without {cfg['person']}")
+    print(f"done: {written} new, {reused} already in shared pool, {skipped} without {cfg['person']}")
 
 
 if __name__ == "__main__":

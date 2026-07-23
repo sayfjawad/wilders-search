@@ -9,6 +9,7 @@ export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
 running() { pgrep -f "$1" | grep -v $$ > /dev/null; }
 log() { echo "$(date '+%F %T') [$MODE] $*"; }
+DG=$(python3 -c 'from pipeline_config import load_config; print(load_config()["_paths"]["debatgemist"])')
 
 index_stats() {
 python3 - <<'EOF'
@@ -68,8 +69,8 @@ video)
   log "wacht op gedistribueerde dg-run (lokale shards + remote workers + puller)"
   while running 'python3 dg_sync\.py' || running 'dg_pull\.sh' \
         || ls /data/WILDERS/.dg_remote_*.active > /dev/null 2>&1; do sleep 300; done
-  N=$(ls /data/WILDERS/debatgemist/*.mp4 2>/dev/null | grep -vc part)
-  GB=$(du -sh /data/WILDERS/debatgemist 2>/dev/null | cut -f1)
+  N=$(ls "$DG"/*.mp4 2>/dev/null | grep -vc part)
+  GB=$(du -sh "$DG" 2>/dev/null | cut -f1)
   restart_app
   python3 notify.py "[wilders-search] Mijlpaal 3: eerste batch debatvideo's binnen" \
 "Eerste videorun klaar: $N debatsessies ($GB), laagste kwaliteit (320x180, ~123 MB/uur).
@@ -80,8 +81,8 @@ Tweede run start zodra de tekst-backfill klaar is (voor de nieuw ontdekte debatd
   while running 'python3 (tk_sync|tk_parse)\.py'; do sleep 300; done
   log "start tweede dg_sync-run"
   python3 dg_sync.py
-  N=$(ls /data/WILDERS/debatgemist/*.mp4 2>/dev/null | grep -vc part)
-  GB=$(du -sh /data/WILDERS/debatgemist 2>/dev/null | cut -f1)
+  N=$(ls "$DG"/*.mp4 2>/dev/null | grep -vc part)
+  GB=$(du -sh "$DG" 2>/dev/null | cut -f1)
   DISK=$(df -h /data | tail -1 | awk '{print $4}')
   restart_app
   python3 notify.py "[wilders-search] Mijlpaal 4: videodekking compleet" \

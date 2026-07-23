@@ -14,8 +14,11 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DATA = Path("/data/WILDERS")
-DG = DATA / "debatgemist"
+from pipeline_config import load_config
+
+_PATHS = load_config()["_paths"]
+DATA = _PATHS["data"]
+DG = _PATHS["debatgemist"]  # shared video pool
 RATE_WINDOW_H = 24
 
 
