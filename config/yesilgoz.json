@@ -1,0 +1,32 @@
+{
+  "person": "Dilan Yeşilgöz",
+  "slug": "yesilgoz",
+  "data_dir": "/data/YESILGOZ",
+  "tk": {
+    "odata_base": "https://gegevensmagazijn.tweedekamer.nl/OData/v4/2.0",
+    "persoon_id": "9ab41898-332f-4c08-a834-d58b4669c990",
+    "match": { "achternaam": "Yeşilgöz", "voornaam": "Dilan" },
+    "since": "2013-01-01"
+  },
+  "ob": {
+    "sru_base": "https://repository.overheid.nl/sru",
+    "creator": "Tweede Kamer der Staten-Generaal",
+    "match_naam": "Yeşilgöz",
+    "since": "1995-01-01",
+    "until": "2013-06-24"
+  },
+  "youtube": {
+    "channels": [
+      {
+        "name": "VVD",
+        "url": "https://www.youtube.com/channel/UCZean7nAZKDGIHANq-MuaGA"
+      }
+    ]
+  },
+  "whisperx": {
+    "model": "large-v3",
+    "language": "nl",
+    "device": "cuda",
+    "batch_size": 16
+  }
+}
